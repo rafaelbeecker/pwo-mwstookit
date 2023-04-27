@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 //BrowseNodeService
@@ -17,18 +19,18 @@ type BrowseNodeService struct{}
 func (b *BrowseNodeService) Read(p string) (*BrowseList, error) {
 	file, err := os.Open(p)
 	if err != nil {
-		return nil, fmt.Errorf("get-node-list: %w", err)
+		return nil, fmt.Errorf("ls: %w", err)
 	}
 	defer file.Close()
 
 	data, err := ioutil.ReadAll(file)
 	if err != nil {
-		return nil, fmt.Errorf("read-node-list: %w", err)
+		return nil, fmt.Errorf("rd: %w", err)
 	}
 
 	var l BrowseList
 	if err := xml.Unmarshal(data, &l); err != nil {
-		return nil, fmt.Errorf("uml-node-list: %w", err)
+		return nil, fmt.Errorf("um: %w", err)
 	}
 	return &l, nil
 }
@@ -56,25 +58,34 @@ func (b *BrowseNodeService) Flat(l *BrowseList, target string) error {
 	}
 	defer p.Close()
 
-	for k, v := range d {
-		log.Printf("Writting %s...\n", k)
-		d, err := xml.MarshalIndent(v, "", "  ")
-		if err != nil {
-			return err
-		}
+	var eg errgroup.Group
+	eg.SetLimit(len(d))
 
-		if err := os.WriteFile(
-			filepath.Join(target, k+".xml"),
-			d,
-			0644,
-		); err != nil {
-			return fmt.Errorf("write-node-list: %w", err)
-		}
+	for i, v := range d {
+		eg.Go(func(k string, s BrowseList) func() error {
+			return func() error {
+				log.Printf("Writing %s...\n", k)
 
-		s := k + ";" + v.Result[0].BrowseNodeName + ""
-		if _, err := p.WriteString(s + "\n"); err != nil {
-			return fmt.Errorf("write-parent-list: %w", err)
-		}
+				d, err := xml.MarshalIndent(s, "", "  ")
+				if err != nil {
+					return fmt.Errorf("xml:%w", err)
+				}
+
+				if err := os.WriteFile(
+					filepath.Join(target, k+".xml"),
+					d,
+					0644,
+				); err != nil {
+					return fmt.Errorf("xml:%w", err)
+				}
+
+				t := s.Result[0].BrowseNodeName + " (" + k + ")"
+				if _, err := p.WriteString(t + "\n"); err != nil {
+					return fmt.Errorf("xml:%w", err)
+				}
+				return nil
+			}
+		}(i, v))
 	}
-	return nil
+	return eg.Wait()
 }
