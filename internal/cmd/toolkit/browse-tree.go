@@ -43,7 +43,6 @@ func newXmlBrowseTreeReportFlatter() *cobra.Command {
 	return cmd
 }
 
-// NewRootCmd
 func newBrowseTreeCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use: "browse-tree",

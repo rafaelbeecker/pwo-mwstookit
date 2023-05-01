@@ -1,8 +1,10 @@
 package mws
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -163,4 +165,48 @@ func (s *BrowseNodeService) DownloadProductTypeDef(dest string, link string) err
 		return fmt.Errorf("DownloadProductTypeDef: %w", err)
 	}
 	return nil
+}
+
+// DownloadBatchTypeDef
+func (s *BrowseNodeService) DownloadBatchTypeDef(marketplace string, productList string, target string) error {
+	file, err := os.Open(productList)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	data, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	var eg errgroup.Group
+	eg.SetLimit(5)
+
+	for _, v := range data {
+		eg.Go(func(t string) func() error {
+			return func() error {
+				dest := filepath.Join(target, t+".json")
+				f, err := os.Stat(dest)
+				if f != nil {
+					log.Printf("schema already exists %s\n", dest)
+					return nil
+				} else if !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
+				log.Printf("downloading schema %s\n", t)
+				link, err := s.GetProductTypeDefSchemaUrl(marketplace, t)
+				if err != nil {
+					return err
+				}
+				if err := s.DownloadProductTypeDef(dest, link); err != nil {
+					return err
+				}
+				log.Printf("schema downloaded at %s\n", dest)
+				return nil
+			}
+		}(v[0]))
+	}
+	return eg.Wait()
 }
