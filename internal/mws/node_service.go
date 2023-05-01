@@ -1,21 +1,23 @@
 package mws
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/rafaelbeecker/mwskit/internal/mws/signer"
 	"golang.org/x/sync/errgroup"
 )
 
-//BrowseNodeService
 type BrowseNodeService struct{}
 
-// Read browse node tree report from path
 func (b *BrowseNodeService) Read(p string) (*BrowseList, error) {
 	file, err := os.Open(p)
 	if err != nil {
@@ -35,7 +37,6 @@ func (b *BrowseNodeService) Read(p string) (*BrowseList, error) {
 	return &l, nil
 }
 
-// Flat browse node list into individual files
 func (b *BrowseNodeService) Flat(l *BrowseList, target string) error {
 
 	var d = make(map[string]BrowseList)
@@ -88,4 +89,78 @@ func (b *BrowseNodeService) Flat(l *BrowseList, target string) error {
 		}(i, v))
 	}
 	return eg.Wait()
+}
+
+func (s *BrowseNodeService) GetProductTypeDefSchemaUrl(sellerId string, productType string) (string, error) {
+	url := `https://sellingpartnerapi-na.amazon.com/definitions/2020-09-01/productTypes/` + productType
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("GetProductTypeDefSchemaUrl: %w", err)
+	}
+
+	q := req.URL.Query()
+	q.Add("sellerId", sellerId)
+	q.Add("marketplaceIds", "A2Q3Y263D00KWC")
+	q.Add("requirements", "LISTING")
+	q.Add("locale", "pt_BR")
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("host", "sellingpartnerapi-na.amazon.com")
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-amz-access-token", os.Getenv("AWS_ACCESS_TOKEN"))
+	req.Header.Set("user-agent", "App 1.0 (Language=Golang/1.18);")
+
+	req2 := signer.Sign4(req, signer.Credentials{
+		AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		SecurityToken:   os.Getenv("AWS_SESSION_TOKEN"),
+		Region:          "us-east-1",
+		Service:         "execute-api",
+	})
+
+	client := http.Client{}
+	resp, err := client.Do(req2)
+	if err != nil {
+		return "", fmt.Errorf("GetProductTypeDefSchemaUrl: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("GetProductTypeDefSchemaUrl: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("GetProductTypeDefSchemaUrl: %d", resp.StatusCode)
+	}
+
+	payload := ProductTypeDefinitions{}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return "", fmt.Errorf("GetProductTypeDefSchemaUrl: %w", err)
+	}
+	return payload.Schema.Link.Resource, nil
+}
+
+func (s *BrowseNodeService) DownloadProductTypeDef(dest string, link string) error {
+	request, err := http.NewRequest(http.MethodGet, link, nil)
+	if err != nil {
+		return fmt.Errorf("DownloadProductTypeDef: %w", err)
+	}
+
+	file, err := os.Create(dest)
+	if err != nil {
+		return fmt.Errorf("DownloadProductTypeDef: %w", err)
+	}
+
+	client := http.Client{}
+	resp, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("DownloadProductTypeDef: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return fmt.Errorf("DownloadProductTypeDef: %w", err)
+	}
+	return nil
 }

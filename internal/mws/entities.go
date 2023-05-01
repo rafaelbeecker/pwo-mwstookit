@@ -17,3 +17,12 @@ type BrowseNode struct {
 	HasChildren            bool   `xml:"hasChildren"`
 	ProductTypeDefinitions string `xml:"productTypeDefinitions"`
 }
+
+// ProductTypeDefinitions download specs
+type ProductTypeDefinitions struct {
+	Schema struct {
+		Link struct {
+			Resource string `json:"resource"`
+		} `json:"link"`
+	} `json:"schema"`
+}

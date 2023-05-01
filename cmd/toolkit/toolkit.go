@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	if err := toolkit.Run(); err != nil {
+	if err := toolkit.NewRootCmd().Execute(); err != nil {
 		log.Fatalln(err)
 	}
 }
