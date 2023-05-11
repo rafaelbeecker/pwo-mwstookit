@@ -3,7 +3,6 @@ package mws
 import (
 	"encoding/csv"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -12,88 +11,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/rafaelbeecker/mwskit/internal/mws/signer"
 	"golang.org/x/sync/errgroup"
 )
 
-type BrowseNodeService struct{}
+// PtypeService
+type PtypeService struct{}
 
-func (b *BrowseNodeService) Read(p string) (*BrowseList, error) {
-	file, err := os.Open(p)
-	if err != nil {
-		return nil, fmt.Errorf("ls: %w", err)
-	}
-	defer file.Close()
-
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		return nil, fmt.Errorf("rd: %w", err)
-	}
-
-	var l BrowseList
-	if err := xml.Unmarshal(data, &l); err != nil {
-		return nil, fmt.Errorf("um: %w", err)
-	}
-	return &l, nil
-}
-
-func (b *BrowseNodeService) Flat(l *BrowseList, target string) error {
-
-	var d = make(map[string]BrowseList)
-	for _, v := range l.Result {
-		s := strings.Split(v.BrowsePathById, ",")
-		if _, ok := d[s[0]]; !ok {
-			d[s[0]] = BrowseList{Result: []BrowseNode{v}}
-		} else if ok {
-			d[s[0]] = BrowseList{Result: append(d[s[0]].Result, v)}
-		}
-	}
-
-	p, err := os.OpenFile(
-		filepath.Join(target, "nodes.csv"),
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
-		0644,
-	)
-	if err != nil {
-		return err
-	}
-	defer p.Close()
-
-	var eg errgroup.Group
-	eg.SetLimit(len(d))
-
-	for i, v := range d {
-		eg.Go(func(k string, s BrowseList) func() error {
-			return func() error {
-				log.Printf("Writing %s...\n", k)
-
-				d, err := xml.MarshalIndent(s, "", "  ")
-				if err != nil {
-					return fmt.Errorf("xml:%w", err)
-				}
-
-				if err := os.WriteFile(
-					filepath.Join(target, k+".xml"),
-					d,
-					0644,
-				); err != nil {
-					return fmt.Errorf("xml:%w", err)
-				}
-
-				t := s.Result[0].BrowseNodeName + " (" + k + ")"
-				if _, err := p.WriteString(t + "\n"); err != nil {
-					return fmt.Errorf("xml:%w", err)
-				}
-				return nil
-			}
-		}(i, v))
-	}
-	return eg.Wait()
-}
-
-func (s *BrowseNodeService) GetProductTypeDefSchemaUrl(sellerId string, productType string) (string, error) {
+// GetProductTypeDefSchemaUrl
+func (s *PtypeService) GetProductTypeDefSchemaUrl(sellerId string, productType string) (string, error) {
 	url := `https://sellingpartnerapi-na.amazon.com/definitions/2020-09-01/productTypes/` + productType
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -143,7 +70,8 @@ func (s *BrowseNodeService) GetProductTypeDefSchemaUrl(sellerId string, productT
 	return payload.Schema.Link.Resource, nil
 }
 
-func (s *BrowseNodeService) DownloadProductTypeDef(dest string, link string) error {
+// DownloadProductTypeDef
+func (s *PtypeService) DownloadProductTypeDef(dest string, link string) error {
 	request, err := http.NewRequest(http.MethodGet, link, nil)
 	if err != nil {
 		return fmt.Errorf("DownloadProductTypeDef: %w", err)
@@ -168,7 +96,7 @@ func (s *BrowseNodeService) DownloadProductTypeDef(dest string, link string) err
 }
 
 // DownloadBatchTypeDef
-func (s *BrowseNodeService) DownloadBatchTypeDef(marketplace string, productList string, target string) error {
+func (s *PtypeService) DownloadBatchTypeDef(marketplace string, productList string, target string) error {
 	file, err := os.Open(productList)
 	if err != nil {
 		return err

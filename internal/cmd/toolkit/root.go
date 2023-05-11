@@ -4,15 +4,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewRootCmd
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use: "tookit",
+		Use:  "tookit",
+		Long: "AWS Selling Partner API toolkit",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
 	}
 	root.SetHelpCommand(&cobra.Command{Hidden: true})
-	root.AddCommand(newBrowseTreeCmd())
-	root.AddCommand(newProductTypeCmd())
+	root.AddCommand(newBtreeCmd())
+	root.AddCommand(newPtypeCmd())
 	return root
 }
